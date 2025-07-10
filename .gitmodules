@@ -1,0 +1,3 @@
+[submodule "pico-rfid-2"]
+	path = DbConnector
+	url = https://github.com/adamboardman/pico-rfid-2
