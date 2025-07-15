@@ -16,10 +16,12 @@ const uint LIST_ADD_PIN = 17;
 const uint LIST_DEL_PIN = 18;
 const uint I2C_GPIO_PIN_SDA = 26;
 const uint I2C_GPIO_PIN_SLC = 27;
+const uint8_t UID_IS_RANDOM = 0x08;
 bool keep_running = true;
 bool add_last_list = false;
 bool del_last_list = false;
 int on_list = 0;
+int last_see_random = 0;
 std::vector<Uid> approved_list;
 
 RFID_2 rfid_2(i2c1, 0x28);
@@ -80,32 +82,40 @@ int main() {
     rfid_2.PCD_Init();
 
     while (keep_running) {
-        if (on_list == 0) {
+        if (on_list == 0 || last_see_random > 0) {
             pwm_set_gpio_level(LED_PIN, 0);
         } else {
             pwm_set_gpio_level(LED_PIN, (MAX_PWM_LEVEL/PWM_SLICES)*on_list);
         }
         sleep_ms(200);
-        if (on_list == 0) {
+        if (last_see_random > 0) {
+            last_see_random--;
+        } else if (on_list == 0) {
             pwm_set_gpio_level(LED_PIN,MAX_PWM_LEVEL/2);
         } else {
             pwm_set_gpio_level(LED_PIN,(MAX_PWM_LEVEL/PWM_SLICES)*on_list);
             on_list--;
         }
         bool present = rfid_2.PICC_IsNewCardPresent();
+
         if (present) {
             printf("PICC_ReadCardSerial: %d\n",rfid_2.PICC_ReadCardSerial());
             auto it = std::find(approved_list.begin(), approved_list.end(), rfid_2.uid);
             if (it != approved_list.end()) {
                 printf("On Approved List\n");
                 on_list = PWM_SLICES;
+                last_see_random = 0;
+            } else if (rfid_2.uid.uidByte[0] == UID_IS_RANDOM) {
+                printf("Random UID detected - cannot be used for access\n");
+                last_see_random = PWM_SLICES;
             } else {
                 on_list = 0;
+                last_see_random = 0;
             }
             rfid_2.PICC_DumpToSerial(&rfid_2.uid);
         }
         if (add_last_list) {
-            if (gpio_get(LIST_ADD_PIN)) {
+            if (gpio_get(LIST_ADD_PIN) && rfid_2.uid.uidByte[0] != UID_IS_RANDOM) {
                 printf("Added to Approved List\n");
                 approved_list.push_back(rfid_2.uid);
             }
